@@ -10,7 +10,8 @@ class Parser:
 
     def __init__(self, file_name):
         """
-        Constructor.        
+        Constructor.  
+              
         :param file_name: string 
         """
 
@@ -26,7 +27,7 @@ class Parser:
         :return: BeautifulSoup 
         """
 
-        with open(self.file_name, 'r', encoding="ISO-8859-2") as input_file:
+        with open(self.file_name, 'r', encoding='ISO-8859-2') as input_file:
             html = input_file.read()
 
         return BeautifulSoup(html, 'html.parser')
@@ -65,14 +66,9 @@ class Parser:
         outside_links = []
 
         for link in self.links:
-            if (("https://" in link) or ("http://" in link)) \
-                    and (not (("http://" + sys.argv[3]) in link)
-                         or not (("https://" + sys.argv[3]) in link)
-                         or not (("http://www." + sys.argv[3]) in link)
-                         or not (("https://www." + sys.argv[3]) in link)):
+            if (link.find("http://") == 0 or link.find("https://") == 0)\
+                    and (link.find("://"+sys.argv[3]) == -1 and link.find("://www."+sys.argv[3]) == -1):
                 outside_links.append(link)
-            else:
-                continue
 
         return outside_links
 
@@ -81,10 +77,25 @@ class LinksModel:
 
     def __init__(self, link):
         """
-        
+        Constructor.
         
         :param link: string 
         """
+
+        self.link = link
+        self.ip_address = self.is_ip_address()
+
+    def is_ip_address(self):
+        """
+        If link is IP address returns true else false
+        
+        :return: bool 
+        """
+        try:
+            ipaddress.ip_address(self.link)
+            return True
+        except ValueError:
+            return False
 
 
 original_page = Parser(sys.argv[1])
