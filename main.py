@@ -1,14 +1,74 @@
 #!/usr/bin/env python
 
-
 import ipaddress
-import requests
+import psycopg2
 import subprocess
 import sys
 from bs4 import BeautifulSoup
 from pylibs.urlnorm.urlnorm_ext import get_first_level_domain
 from pylibs.urlnorm.urlnorm_ext import get_hostname
+from termcolor import cprint
 
+
+
+class Database:
+
+    def __init__(self):
+        """
+        Class constructor.
+        
+        """
+
+        try:
+            self.conn = psycopg2.connect("dbname='phishing' user='admin' host='localhost' password='admin'")
+        except psycopg2.Error:
+            cprint("DATABASE ERROR: Unable to connect to the database", 'red')
+
+    def is_domain_in_blacklist(self, domain):
+        """
+        Checks if domain is in the DB blacklist. If yes returns true else false
+        
+        :param domain: string 
+        :return: boolean
+        """
+
+        cur = self.conn.cursor()
+
+        try:
+            cur.execute("""SELECT domain FROM blacklist WHERE domain=%s""", (domain,))
+        except psycopg2.DatabaseError:
+            cprint("DATABASE ERROR: Execution of SELECT failed", 'red')
+
+        result = cur.fetchall()
+
+        if not result:
+            return False
+
+        cprint("This domain " + domain + " is in database blacklist.", 'green')
+        return True
+
+    def is_domain_in_whitelist(self, domain):
+        """
+        Checks if domain is in the DB whitelist. If yes returns true else false
+
+        :param domain: string 
+        :return: boolean
+        """
+
+        cur = self.conn.cursor()
+
+        try:
+            cur.execute("""SELECT domain FROM whitelist WHERE domain=%s""", (domain,))
+        except psycopg2.DatabaseError:
+            cprint("DATABASE ERROR: Execution of SELECT failed", 'red')
+
+        result = cur.fetchall()
+
+        if not result:
+            return False
+
+        cprint("This domain " + domain + " is in database whitelist.", 'green')
+        return True
 
 class Parser:
 
@@ -45,8 +105,8 @@ class Parser:
                     links.add(a['href'])
                 except KeyError:
                     continue
-        except TypeError:
-            print("INFO: domain " + self.domain + " has no body element")
+        except:
+            cprint("INFO: domain " + self.domain + " has no body element", 'cyan')
             return set()
 
         return links
@@ -95,17 +155,21 @@ class LinksModel:
 
     def count_subdomains(self):
         """
-        Couns how many link has got
+        Counts how many link has got
         
         :return: int
         """
 
         count = 0
-        
+
         hostname = get_hostname(self.link)
-        count = hostname.replace(get_first_level_domain(hostname), '').count('.')
+        try:
+            count = hostname.replace(get_first_level_domain(hostname), '').count('.')
+        except:
+            return 0
 
         return count
+
 
 domain_file = sys.argv[1]
 
@@ -114,7 +178,12 @@ with open(domain_file, 'r') as input_file:
 
 domains = [domain.strip() for domain in domains]
 
+database = Database()
+
 for domain in domains:
+
+    database.is_domain_in_blacklist(domain)
+    database.is_domain_in_whitelist(domain)
 
     bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
     bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
@@ -123,30 +192,30 @@ for domain in domains:
     try:
         output_before_js = subprocess.check_output(['bash', '-c', bash_command_before_js], timeout=15)
     except subprocess.CalledProcessError:
-        print("WARNING: Something has gone wrong with executing wget, domain: " + domain)
+        cprint("WARNING: Something has gone wrong with executing wget, domain: " + domain, 'red')
         continue
     except subprocess.TimeoutExpired:
-        print("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain)
+        cprint("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain, 'red')
         continue
 
     try:
         output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
     except subprocess.CalledProcessError:
-        print("WARNING: Something has gone wrong with executing Chrome, domain: " + domain)
+        cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
         continue
     except subprocess.TimeoutExpired:
-        print("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain)
+        cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
         continue
 
     html_before_js = BeautifulSoup(output_before_js, 'html.parser')
     html_after_js = BeautifulSoup(output_after_js, 'html.parser')
 
     if html_before_js is None:
-        print("WARNING: Wget returned empty page, domain: " + domain)
+        cprint("WARNING: Wget returned empty page, domain: " + domain, 'red')
         continue
 
     if html_after_js is None:
-        print("WARNING: Chrome returned empty page, domain: " + domain)
+        cprint("WARNING: Chrome returned empty page, domain: " + domain, 'red')
         continue
 
     original_page = Parser(html_before_js, domain)
@@ -156,11 +225,10 @@ for domain in domains:
         result = LinksModel(link)
 
     different_links = page_after_js.links_outside - original_page.links_outside
-"""
-    print('--- URL: ', domain)
+
+    cprint('--- URL: ' + domain, 'yellow')
     print('    Total links before: ', len(original_page.links))
     print('    Total links after: ', len(page_after_js.links))
     print('    Outside links before: ', len(original_page.links))
     print('    Outside links after: ', len(original_page.links_outside))
-    print('    Outside: ', page_after_js.links_outside)
-"""
+    # print('    Outside: ', page_after_js.links_outside)
