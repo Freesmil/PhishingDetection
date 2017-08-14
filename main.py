@@ -10,7 +10,6 @@ from pylibs.urlnorm.urlnorm_ext import get_hostname
 from termcolor import cprint
 
 
-
 class Database:
 
     def __init__(self):
@@ -69,6 +68,7 @@ class Database:
 
         cprint("This domain " + domain + " is in database whitelist.", 'green')
         return True
+
 
 class Parser:
 
@@ -182,8 +182,8 @@ database = Database()
 
 for domain in domains:
 
-    database.is_domain_in_blacklist(domain)
-    database.is_domain_in_whitelist(domain)
+    # domain = database.is_domain_in_blacklist(domain)
+    # domain = database.is_domain_in_whitelist(domain)
 
     bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
     bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
@@ -210,6 +210,12 @@ for domain in domains:
     html_before_js = BeautifulSoup(output_before_js, 'html.parser')
     html_after_js = BeautifulSoup(output_after_js, 'html.parser')
 
+    try:
+        html_before_js.prettify()
+        html_after_js.prettify()
+    except Exception:
+        continue
+
     if html_before_js is None:
         cprint("WARNING: Wget returned empty page, domain: " + domain, 'red')
         continue
@@ -221,8 +227,13 @@ for domain in domains:
     original_page = Parser(html_before_js, domain)
     page_after_js = Parser(html_after_js, domain)
 
+    processed_links = []
+
     for link in page_after_js.links_outside:
         result = LinksModel(link)
+        result.blacklist = database.is_domain_in_blacklist(link)
+        result.whitelist = database.is_domain_in_whitelist(link)
+        processed_links.append(result)
 
     different_links = page_after_js.links_outside - original_page.links_outside
 
