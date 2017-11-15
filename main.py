@@ -43,7 +43,7 @@ class Database:
         if not result:
             return False
 
-        cprint("This domain " + domain + " is in database blacklist.", 'green')
+        cprint("Domain " + domain + " is in database blacklist.", 'green')
         return True
 
     def is_domain_in_whitelist(self, domain):
@@ -66,7 +66,7 @@ class Database:
         if not result:
             return False
 
-        cprint("This domain " + domain + " is in database whitelist.", 'green')
+        cprint("Domain " + domain + " is in database whitelist.", 'green')
         return True
 
 
@@ -93,7 +93,6 @@ class Parser:
 
         links = set()
         for a in self.html('a'):
-
             try:
                 links.add(a['href'])
             except KeyError:
@@ -108,6 +107,15 @@ class Parser:
         except:
             cprint("INFO: domain " + self.domain + " has no body element", 'cyan')
             return set()
+
+        for link in links:
+            try:
+                if link.index('@') > 0:
+                    position = link.index('@')
+                    links.add(link[:position])
+                    links.add(link[position+1:])
+            except ValueError:
+                continue
 
         return links
 
@@ -128,7 +136,7 @@ class Parser:
         return outside_links
 
 
-class LinksModel:
+class LinkModel:
 
     def __init__(self, link):
         """
@@ -167,6 +175,9 @@ class LinksModel:
             count = hostname.replace(get_first_level_domain(hostname), '').count('.')
         except:
             return 0
+
+        if count > 5:
+            cprint("Link " + link + " has more than 5 subdomains.", 'orange')
 
         return count
 
@@ -227,15 +238,18 @@ for domain in domains:
     original_page = Parser(html_before_js, domain)
     page_after_js = Parser(html_after_js, domain)
 
+    links = page_after_js.links_outside - original_page.links_outside
+
+    links.add(domain)
+
     processed_links = []
 
-    for link in page_after_js.links_outside:
-        result = LinksModel(link)
+    for link in links:
+        result = LinkModel(link)
         result.blacklist = database.is_domain_in_blacklist(link)
         result.whitelist = database.is_domain_in_whitelist(link)
         processed_links.append(result)
 
-    different_links = page_after_js.links_outside - original_page.links_outside
 
     cprint('--- URL: ' + domain, 'yellow')
     print('    Total links before: ', len(original_page.links))
@@ -243,3 +257,4 @@ for domain in domains:
     print('    Outside links before: ', len(original_page.links))
     print('    Outside links after: ', len(original_page.links_outside))
     # print('    Outside: ', page_after_js.links_outside)
+    # document.documentElement.outerHTML;
