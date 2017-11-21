@@ -181,80 +181,82 @@ class LinkModel:
 
         return count
 
+    
+if __name__ == "__main__" : 
+    
+    domain_file = sys.argv[1]
 
-domain_file = sys.argv[1]
+    with open(domain_file, 'r') as input_file:
+        domains = input_file.readlines()
 
-with open(domain_file, 'r') as input_file:
-    domains = input_file.readlines()
+    domains = [domain.strip() for domain in domains]
 
-domains = [domain.strip() for domain in domains]
+    database = Database()
 
-database = Database()
+    for domain in domains:
 
-for domain in domains:
+        # domain = database.is_domain_in_blacklist(domain)
+        # domain = database.is_domain_in_whitelist(domain)
 
-    # domain = database.is_domain_in_blacklist(domain)
-    # domain = database.is_domain_in_whitelist(domain)
+        bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
+        bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
+                                ' --dump-dom http://' + domain
 
-    bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
-    bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
-                            ' --dump-dom http://' + domain
+        try:
+            output_before_js = subprocess.check_output(['bash', '-c', bash_command_before_js], timeout=15)
+        except subprocess.CalledProcessError:
+            cprint("WARNING: Something has gone wrong with executing wget, domain: " + domain, 'red')
+            continue
+        except subprocess.TimeoutExpired:
+            cprint("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain, 'red')
+            continue
 
-    try:
-        output_before_js = subprocess.check_output(['bash', '-c', bash_command_before_js], timeout=15)
-    except subprocess.CalledProcessError:
-        cprint("WARNING: Something has gone wrong with executing wget, domain: " + domain, 'red')
-        continue
-    except subprocess.TimeoutExpired:
-        cprint("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain, 'red')
-        continue
+        try:
+            output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
+        except subprocess.CalledProcessError:
+            cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
+            continue
+        except subprocess.TimeoutExpired:
+            cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
+            continue
 
-    try:
-        output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
-    except subprocess.CalledProcessError:
-        cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
-        continue
-    except subprocess.TimeoutExpired:
-        cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
-        continue
+        html_before_js = BeautifulSoup(output_before_js, 'html.parser')
+        html_after_js = BeautifulSoup(output_after_js, 'html.parser')
 
-    html_before_js = BeautifulSoup(output_before_js, 'html.parser')
-    html_after_js = BeautifulSoup(output_after_js, 'html.parser')
+        try:
+            html_before_js.prettify()
+            html_after_js.prettify()
+        except Exception:
+            continue
 
-    try:
-        html_before_js.prettify()
-        html_after_js.prettify()
-    except Exception:
-        continue
+        if html_before_js is None:
+            cprint("WARNING: Wget returned empty page, domain: " + domain, 'red')
+            continue
 
-    if html_before_js is None:
-        cprint("WARNING: Wget returned empty page, domain: " + domain, 'red')
-        continue
+        if html_after_js is None:
+            cprint("WARNING: Chrome returned empty page, domain: " + domain, 'red')
+            continue
 
-    if html_after_js is None:
-        cprint("WARNING: Chrome returned empty page, domain: " + domain, 'red')
-        continue
+        original_page = Parser(html_before_js, domain)
+        page_after_js = Parser(html_after_js, domain)
 
-    original_page = Parser(html_before_js, domain)
-    page_after_js = Parser(html_after_js, domain)
+        links = page_after_js.links_outside - original_page.links_outside
 
-    links = page_after_js.links_outside - original_page.links_outside
+        links.add(domain)
 
-    links.add(domain)
+        processed_links = []
 
-    processed_links = []
-
-    for link in links:
-        result = LinkModel(link)
-        result.blacklist = database.is_domain_in_blacklist(link)
-        result.whitelist = database.is_domain_in_whitelist(link)
-        processed_links.append(result)
+        for link in links:
+            result = LinkModel(link)
+            result.blacklist = database.is_domain_in_blacklist(link)
+            result.whitelist = database.is_domain_in_whitelist(link)
+            processed_links.append(result)
 
 
-    cprint('--- URL: ' + domain, 'yellow')
-    print('    Total links before: ', len(original_page.links))
-    print('    Total links after: ', len(page_after_js.links))
-    print('    Outside links before: ', len(original_page.links))
-    print('    Outside links after: ', len(original_page.links_outside))
-    # print('    Outside: ', page_after_js.links_outside)
-    # document.documentElement.outerHTML;
+        cprint('--- URL: ' + domain, 'yellow')
+        print('    Total links before: ', len(original_page.links))
+        print('    Total links after: ', len(page_after_js.links))
+        print('    Outside links before: ', len(original_page.links))
+        print('    Outside links after: ', len(original_page.links_outside))
+        # print('    Outside: ', page_after_js.links_outside)
+        # document.documentElement.outerHTML;
