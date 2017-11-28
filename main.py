@@ -1,14 +1,18 @@
 #!/usr/bin/env python
 
 import ipaddress
+import multiprocessing
+import os
 import psycopg2
 import subprocess
 import sys
 import urllib
+import yara
 from bs4 import BeautifulSoup
 from pylibs.urlnorm.urlnorm_ext import get_first_level_domain
 from pylibs.urlnorm.urlnorm_ext import get_hostname
 from termcolor import cprint
+from urllib.parse import urlparse
 
 
 class Database:
@@ -50,7 +54,7 @@ class Database:
         if not result:
             return False
 
-        cprint("Domain " + domain + " is in database blacklist.", 'green')
+        #cprint("Domain " + domain + " is in database blacklist.", 'green')
         return True
 
     def is_domain_in_whitelist(self, domain):
@@ -94,7 +98,7 @@ class Parser:
         result = {'domain': domain,
                   'html': html_after,
                   'links': links,
-                  'links_outside': self.get_outside_links(links)}
+                  'links_outside': self.get_outside_links(domain, links)}
 
         return result
 
@@ -122,21 +126,25 @@ class Parser:
                 except KeyError:
                     continue
         except:
-            cprint("INFO: domain " + domain + " has no body element", 'cyan')
+            cprint("INFO: Domain " + domain + " has no body element", 'cyan')
             return set()
+
+        new_links = set()
 
         for link in links:
             try:
                 if link.index('@') > 0:
                     position = link.index('@')
-                    links.add(link[:position])
-                    links.add(link[position+1:])
+                    new_links.add(link[:position])
+                    new_links.add(link[position+1:])
             except ValueError:
                 continue
 
+        links = links | new_links
+
         return links
 
-    def get_outside_links(self, links):
+    def get_outside_links(self, domain, links):
         """
         Gets links and return links which are outside of the domain.
 
@@ -162,6 +170,11 @@ class Detector:
         """
         self.database = Database()
 
+        self.yara_matches = 0
+        self.yara_rules = yara.compile(
+            filepath = os.path.dirname(os.path.realpath(__file__))+'/'+'patterns.yar'
+        )
+
     def detection(self, parsed_domain):
         links = parsed_domain['links']
 
@@ -170,7 +183,8 @@ class Detector:
         result['html'] = {}
         result['html']['links'] = {}
         result['html']['redirects'] = self.redirects_detection(parsed_domain['html'])
-        result['html']['yara'] = self.yara_detection(parsed_domain['html'])
+        self.yara_detection(parsed_domain['html'])
+        result['html']['yara'] = self.yara_matches
 
         for link in links:
             result['html']['links'][link] = self.link_detection(link)
@@ -223,13 +237,141 @@ class Detector:
         return count
 
     def is_link_xss(self, link):
+        try:
+            link = urlparse(link)
+            query = link.query
+        except TypeError:
+            return False
+
+        xss_patterns = {
+            '<script>',
+            'onclick=',
+            'ondblclick=',
+            'onmousedown=',
+            'onmouseup=',
+            'onmouseover=',
+            'onmousemove=',
+            'onmouseout=',
+            'ondragstart=',
+            'ondrag=',
+            'ondragenter=',
+            'ondragleave=',
+            'ondragover=',
+            'ondrop=',
+            'ondragend=',
+            'onkeydown=',
+            'onkeypress=',
+            'onkeyup=',
+            'onload=',
+            'onunload=',
+            'onabort=',
+            'onerror=',
+            'onresize=',
+            'onscroll=',
+            'onselect=',
+            'onchange=',
+            'onsubmit=',
+            'onreset=',
+            'onfocus=',
+            'onblur=',
+            'onpointerdown=',
+            'onpointerup=',
+            'onpointercancel=',
+            'onpointermove=',
+            'onpointerover=',
+            'onpointerout=',
+            'onpointerenter=',
+            'onpointerleave=',
+            'ongotpointercapture=',
+            'onlostpointercapture=',
+            'oncut=',
+            'oncopy=',
+            'onpaste=',
+            'onbeforecut=',
+            'onbeforecopy=',
+            'onbeforepaste=',
+            'onafterupdate=',
+            'onbeforeupdate=',
+            'oncellchange=',
+            'ondataavailable=',
+            'ondatasetchanged=',
+            'ondatasetcomplete=',
+            'onerrorupdate=',
+            'onrowenter=',
+            'onrowexit=',
+            'onrowsdelete=',
+            'onrowinserted=',
+            'oncontextmenu=',
+            'ondrag=',
+            'ondragstart=',
+            'ondragenter=',
+            'ondragover=',
+            'ondragleave=',
+            'ondragend=',
+            'ondrop=',
+            'onselectstart=',
+            'onhelp=',
+            'onbeforeunload=',
+            'onstop=',
+            'onbeforeeditfocus=',
+            'onstart=',
+            'onfinish=',
+            'onbounce=',
+            'onbeforeprint=',
+            'onafterprint=',
+            'onpropertychange=',
+            'onfilterchange=',
+            'onreadystatechange=',
+            'onlosecapture=',
+            'DOMMouseScroll=',
+            'ondragdrop=',
+            'ondragenter=',
+            'ondragexit=',
+            'ondraggesture=',
+            'ondragover=',
+            'onclose=',
+            'oncommand=',
+            'oninput=',
+            'DOMMenuItemActive=',
+            'DOMMenuItemInactive=',
+            'oncontextmenu=',
+            'onoverflow=',
+            'onoverflowchanged=',
+            'onunderflow=',
+            'onpopuphidden=',
+            'onpopuphiding=',
+            'onpopupshowing=',
+            'onpopupshown=',
+            'onbroadcast=',
+            'oncommandupdate=',
+            'eventTypeArg=',
+            'canBubbleArg=',
+            'cancelableArg'
+        }
+
+        for pattern in xss_patterns:
+            if query.find(pattern) != -1:
+                cprint(" ------ ++++ ------ XSS FOUND", 'blue')
+                return True
+
         return False
 
     def redirects_detection(self, code):
         return False
 
     def yara_detection(self, code):
-        return False
+        self.yara_matches = 0
+
+        try:
+            self.yara_rules.match(data=code.prettify(), callback=self.yara_match)
+        except yara.YaraSyntaxError:
+            cprint("YARA error occurred while matching rules.", "red")
+            return False
+
+    def yara_match(self):
+        self.yara_matches += 1
+
+        return yara.CALLBACK_CONTINUE
 
 
 class Evaluation:
@@ -248,6 +390,60 @@ class Evaluation:
         print("Y")
 
 
+def detect_website(data):
+    index = data[0]
+    domain = data[1]
+        
+    bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
+    bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
+                            ' --dump-dom http://' + domain
+
+    try:
+        output_before_js = subprocess.check_output(['bash', '-c', bash_command_before_js], timeout=15)
+    except subprocess.CalledProcessError:
+        cprint("WARNING: Something has gone wrong with executing wget, domain: " + domain, 'red')
+        return
+    except subprocess.TimeoutExpired:
+        cprint("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain, 'red')
+        return
+
+    try:
+        output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
+    except subprocess.CalledProcessError:
+        cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
+        return
+    except subprocess.TimeoutExpired:
+        cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
+        return
+
+    html_before_js = BeautifulSoup(output_before_js, 'html.parser')
+    html_after_js = BeautifulSoup(output_after_js, 'html.parser')
+
+    try:
+        html_before_js.prettify()
+        html_after_js.prettify()
+    except Exception:
+        return
+
+    if html_before_js is None:
+        cprint("WARNING: Wget returned an empty web page, domain: " + domain, 'red')
+        return
+
+    if html_after_js is None:
+        cprint("WARNING: Chrome returned an empty web page, domain: " + domain, 'red')
+        return
+
+    parser = Parser()
+    parsed_domain = parser.parse(domain, html_before_js, html_after_js)
+
+    detector = Detector()
+
+    detection_result = detector.detection(parsed_domain)
+
+    evaluator = Evaluation()
+    evaluator.evaluate(detection_result)
+
+
 if __name__ == "__main__" :
     domain_file = sys.argv[1]
 
@@ -256,56 +452,13 @@ if __name__ == "__main__" :
 
     domains = [domain.strip() for domain in domains]
 
+    data = ()
+    index = 1
 
     for domain in domains:
+        data = data + ([index, domain],)
+        index = index + 1
 
-        bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
-        bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
-                                ' --dump-dom http://' + domain
-
-        try:
-            output_before_js = subprocess.check_output(['bash', '-c', bash_command_before_js], timeout=15)
-        except subprocess.CalledProcessError:
-            cprint("WARNING: Something has gone wrong with executing wget, domain: " + domain, 'red')
-            continue
-        except subprocess.TimeoutExpired:
-            cprint("WARNING: Something has gone wrong with executing wget (timeout expired), domain: " + domain, 'red')
-            continue
-
-        try:
-            output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
-        except subprocess.CalledProcessError:
-            cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
-            continue
-        except subprocess.TimeoutExpired:
-            cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
-            continue
-
-        html_before_js = BeautifulSoup(output_before_js, 'html.parser')
-        html_after_js = BeautifulSoup(output_after_js, 'html.parser')
-
-        try:
-            html_before_js.prettify()
-            html_after_js.prettify()
-        except Exception:
-            continue
-
-        if html_before_js is None:
-            cprint("WARNING: Wget returned empty web page, domain: " + domain, 'red')
-            continue
-
-        if html_after_js is None:
-            cprint("WARNING: Chrome returned empty web page, domain: " + domain, 'red')
-            continue
-
-        parser = Parser()
-        parsed_domain = parser.parse(domain, html_before_js, html_after_js)
-
-        detector = Detector()
-
-        detection_result = detector.detection(parsed_domain)
-
-        evaluator = Evaluation()
-        evaluator.evaluate(detection_result)
-
+    pool = multiprocessing.Pool(5)
+    pool.map(detect_website, data, chunksize=1)
 
