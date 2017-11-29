@@ -9968,3 +9968,303 @@ rule pbot
     condition:
         all of them
 }
+
+/////////////////// CRYXOS
+// See Sample File in JS_Trojan_Cryxos directory
+rule MKO_JS_Trojan_Cryxos_131 {
+    meta:
+        authors = "Michael Kofler"
+        type = "javascript"
+    strings:
+        $ = "eval('\\u0073\\u0065\\u0074"
+    condition:
+        any of them
+}
+
+
+/////////////////// End of CRYXOS
+
+/////////////////// HIDELINKS_RULES
+// See Sample File in hidelink directory
+rule MKO_HIDELINK_JS_Trojan_HideLink_A {
+    meta:
+        authors = "Michael Kofler"
+        type = "javascript"
+    strings:
+        $s = /xViewState.*[\S+\n\r\s]+Array.*[\S+\n\r\s]+fromCharCode.*[\S+\n\r\s]+document.write.*[\S+\n\r\s]+xViewState/ nocase ascii wide
+    condition:
+        $s
+}
+
+/////////////////// END OF HIDELINK RULES
+
+
+rule MKO_REDIR_LIKE_TO_48040c_com {
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "<script src=\"/tj/tj.js\"></script>"
+    condition:
+        all of them
+}
+
+rule MKO_HTML_REDIRME_INF {
+/*
+From VirusShare : HTML:RedirME-inf [Trj]
+    MD5 = cf1cb15d741c79556f9df3bd151982a8
+    MD5 = c274b0bfbb62255349e0cea597da1ec2
+    MD5 = 9ed4ba52fc7b938b6dab2170245d47d4
+    MD5 = 4bc7cb92cb3e1f5e41bb99bd9e2f2fcc
+    MD5 = c134e1f696263eeb7f7debeac09119df
+    MD5 = 6c6d50ad21a5a74feac5de6d734c6868
+    MD5 = e3f06cc6a66892de79b56256e1ec97bb
+    MD5 = 52f9e2e8956360b3bb93f772b147b9da
+    MD5 = 01ba5a8440c7c44c8ec79ffe434a0a01
+*/
+
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "URL=http://www.javiermartinproyectos.com/" nocase
+        $ = "url=http://w.droid2go.com"    nocase
+        $ = "url=http://k0m.primeintactbrand.com/" nocase
+        $ = "url=http://w.meronlinekhabar.com/" nocase
+        $ = "url=http://bidr.trellian.com/" nocase
+        $ = "url=http://bidr.trellian.com" nocase
+        $ = "url=http://ycv.clearshieldredirect.com/" nocase
+        $ = "URL=http://se0h.5565825.com/" nocase
+        $ = "url=http://www.sabayoi.ac.th/" nocase
+    condition:
+        any of them
+}
+
+rule MKO_UBROWSER {
+//  <title>uBrowser</title>
+// window.location.href = "https://torrentz2.eu/search?f=";
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "<title>uBrowser</title>"
+        $ = "window.location.href = \"https://torrentz2.eu/search?f=\";"
+     condition:
+        all of them
+}
+
+rule MKO_mac_keeper {
+    strings:
+        $ = "window.location='MAC479mackeeperALL.html'"
+
+    condition:
+      any of them
+}
+
+rule MKO_dating_redirect {
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "window.location = 'http://www.wwdating1.top/rtds/go."
+    condition:
+        any of them
+}
+
+rule MKO_free_meet {
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "window.location=\"http://free-meet-match.com/"
+    condition:
+        any of them
+}
+
+rule MKO_savechildren {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "bits=h1<<18|h2<<12|h3<<6|h4"
+    condition:
+        any of them
+}
+
+rule MKO_polish_klingeling {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "navigator.vibrate"
+        $ = "http://anstranas.com/"
+        $ = "Google Playstore - Recommended Apps"
+    condition:
+        all of them
+}
+
+rule MKO_testing_html_S3 {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "TESTING HTML S3"
+    condition:
+        any of them
+}
+
+rule MKO_womenshealth {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "http://files.10mb.tk/static/diet/de/womenshealth/img/cambogia-bottle.png"
+    condition:
+        any of them
+}
+
+// Rule for the us.*.top
+rule MKO_us_top_sites {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "<title>success</title>"
+        $ = "<div class=\"ccc\">DnsIsSuccess</div>"
+    condition:
+        all of them
+}
+
+
+rule MKO_NEWTEST_II_Generic_PHP_Loaded_with_JavaScript {
+// Websites like goldenmails.ma (Code like <script language=JavaScript src=/modules/mod_stats/stat12c.php ></script>)
+    meta:
+        authors = "Michael Kofler"
+        type = "javascript"
+    strings:
+        $a = /<script language=JavaScript src=.*\.php.*<\/script>/ nocase
+    condition:
+        all of them
+}
+
+
+rule MKO_EVIL_BIT_Generic_PHP_Loaded_with_JavaScript {
+// Websites like huetteldorf.at which uses evil bit also (Code like <!--ce044a--><script type="text/javascript" src="http://sanmarius.com.br/script.php"></script><!--/ce044a--> )
+// or kingove.cz
+// strings: $b = /<!--[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\><script.*type=\"text\/javascript\".*src=\".*\.php\">.*<\/script>.*<!--\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\>/ nocase
+    meta:
+        authors = "Michael Kofler"
+        type = "javascript"
+    strings:
+        $a = /<!--[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\><script.*type=\"text\/javascript\".*src=\".*\.php\">.*<\/script>.*<!--\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\>/ nocase
+        $b = /<!--[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\><script.*type=\"text\/javascript\".*src=\".*\.js\".*>.*<\/script>.*<!--\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\-\-\>/ nocase
+    condition:
+        any of them
+}
+
+rule MKO_Generic_suspicious_JavaScript_code {
+// WebSites like 012117.com
+    meta:
+        authors = "Michael Kofler"
+        type = "javascript"
+    strings:
+        $ = "src=\"/engine/classes/min/index.php"
+    condition:
+        all of them
+}
+
+rule MKO_REDIR_TO_48040c_com {
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "<script language=\"javascript\" type=\"text/javascript\" src=\"/tj.js\"></script>"
+    condition:
+        all of them
+}
+
+rule MKO_us_porn_redirector {
+// Pages like iafnsiyxxssf.grace-with-joan.us
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "If you are under 18 years of age"
+        $ = "/enter.php?src5=self"
+    condition:
+        all of them
+}
+
+rule MKO_accountant_porn_redirector {
+// Pages like myrtle-beach-dating.accountant
+    meta:
+        authors = "Michael Kofler"
+        type = "redirect"
+    strings:
+        $ = "window.location = 'http://www.datingli1.top/rtds/go.php"
+    condition:
+        any of them
+}
+
+/*
+File contains common patterns in HTML structure: tags, texts, links
+*/
+
+rule MKO_POST_HIDDEN_FORM_404 {
+// Domains like play8539.crazysuperwinner45.top
+//              app1147.smart-winners44.top
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "<form method=\"post\""
+        $ = "<input type=\"hidden\" name=\"__VIEWSTATE\""
+        $ = "name=\"__VIEWSTATEGENERATOR\" id=\"__VIEWSTATEGENERATOR\""
+    condition :
+        all of them and (filesize < 2KB)
+}
+
+rule MKO_drop_svchost_Trojan_HTML_Ramnit_A {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "DropFileName = \"svchost.exe\""
+    condition:
+        any of them
+}
+
+rule MKO_SUSPICIOUS_CRYPTO_LOOT {
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $ = "CryptoLoot.Anonymous"
+        $ = "miner.start"
+    condition:
+        all of them
+}
+
+rule MKO_SUSPICIOUS_BID_COINHIVE_306_v2 {
+/*
+for sites like
+
+otrjvabiv.bid
+usuanyzr.bid
+iaimnsxepxdy.bid
+opknogsela.bid
+umffsefd.bid
+hevfziuvxq.bid
+
+originally contained $ = "Content-Length: 306"
+*/
+    meta:
+        authors = "Michael Kofler"
+        type = "common"
+    strings:
+        $a = "mnr.src = 'https://coin-hive.com/"
+        $b = "miner=CoinHive.Anonymous"
+        $c = "src=\"https://coinhive.com/lib/coinhive.min.js\""
+    condition:
+        ($a and $b) or $c
+}
