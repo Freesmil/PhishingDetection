@@ -7,11 +7,10 @@ import psycopg2
 import re
 import subprocess
 import sys
-import ujson
+import time
 import urllib
 import yara
 from bs4 import BeautifulSoup
-from ctypes import c_char_p
 from multiprocessing import Value
 from pylibs.urlnorm.urlnorm_ext import get_first_level_domain
 from pylibs.urlnorm.urlnorm_ext import get_hostname
@@ -540,7 +539,7 @@ class Evaluation:
         cprint("    Domain is " + result['domain']['status'])
         cprint("    Blacklist: " + str(result['domain']['blacklist']), 'white')
         cprint("    IP: " + str(result['domain']['ip']), 'white')
-        cprint("    XSS: " + str(result['domain']['xss']), 'white')
+        cprint("    XSS: " + str(result['domain']['xss'] | result['html']['code_xss']), 'white')
         cprint("    Too many subdomains: " + str(result['domain']['count_subdomains']), 'white')
         cprint("    Outside redirects: " + str(result['html']['redirects']['outside']), 'white')
         cprint("    Found malware pattern: " + str(result['html']['yara']), 'white')
@@ -568,6 +567,9 @@ class Evaluation:
         cprint("Links XSS: " + str(total_links_xss.value), "white")
 
 
+times_chrome = []
+times_wget = []
+
 def detect_website(data):
     index = data[0]
     domain = data[1]
@@ -587,7 +589,9 @@ def detect_website(data):
         return
 
     try:
+        #start_time = time.time()
         output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
+        #times_chrome.append(time.time() - start_time)
     except subprocess.CalledProcessError:
         cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
         return
@@ -612,9 +616,12 @@ def detect_website(data):
         cprint("WARNING: Chrome returned an empty web page, domain: " + domain, 'red')
         return
 
-    parsed_domain = parser.parse(domain, html_before_js, html_after_js)
-    detection_result = detector.detection(parsed_domain)
-    evaluator.evaluate(detection_result, index)
+    try:
+        parsed_domain = parser.parse(domain, html_before_js, html_after_js)
+        detection_result = detector.detection(parsed_domain)
+        evaluator.evaluate(detection_result, index)
+    except Exception:
+        return
 
 
 
@@ -652,11 +659,6 @@ if __name__ == "__main__" :
     total_links_blacklist = Value('i', 0)
     total_links_xss = Value('i', 0)
 
-
     pool = multiprocessing.Pool(5)
     pool.map(detect_website, data, chunksize=1)
-
-
-
-
 
