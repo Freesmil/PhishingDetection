@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import glob
 import ipaddress
 import multiprocessing
 import os
@@ -52,7 +53,10 @@ class Database:
         except psycopg2.DatabaseError:
             cprint("DATABASE ERROR: Execution of SELECT failed", 'red')
 
-        result = cur.fetchall()
+        try:
+            result = cur.fetchall()
+        except psycopg2.ProgrammingError:
+            return False
 
         if not result:
             return False
@@ -70,10 +74,10 @@ class Parser:
 
     def parse(self, domain, html_before, html_after):
 
-        links = self.get_links(domain, html_before)
+        links = self.get_links(domain, html_after)
 
-        for link in self.get_links(domain, html_after):
-            links.add(link)
+        #for link in self.get_links(domain, html_after):
+        #    links.add(link)
 
         result = {'domain': domain,
                   'html': html_after,
@@ -164,13 +168,24 @@ class Detector:
         result['html']['links'] = {}
         result['html']['links_outside_count'] = len(parsed_domain['links_outside'])
         result['html']['links_count'] = len(parsed_domain['links'])
+
+        start_time = time.time()
+        result['html']['code_xss'] = self.code_xss(parsed_domain['html'])
+        times_xss.append(time.time() - start_time)
+
+        start_time = time.time()
         result['html']['redirects'] = self.redirects_detection(parsed_domain['html'], parsed_domain['domain'])
+        times_redirects.append(time.time() - start_time)
+
+        start_time = time.time()
         self.yara_detection(parsed_domain['html'])
         result['html']['yara'] = self.yara_matches
-        result['html']['code_xss'] = self.code_xss(parsed_domain['html'])
+        times_yara.append(time.time() - start_time)
 
+        start_time = time.time()
         for link in links:
             result['html']['links'][link] = self.link_detection(link)
+        times_links.append(time.time() - start_time)
 
         return result
 
@@ -361,7 +376,6 @@ class Detector:
 
         for pattern in xss_patterns:
             if query.find(pattern) != -1:
-                #cprint(" ------ ++++ ------ XSS FOUND", 'blue')
                 return True
 
         return False
@@ -561,19 +575,29 @@ class Evaluation:
         cprint("XSS: " + str(total_xss.value), "white")
         cprint("Blacklist: " + str(total_blacklist.value), "white")
         cprint("Redirect: " + str(total_redirects.value), "white")
-        cprint("Yara: " + str(total_yara.value), "white")
+        cprint("Found malware patters: " + str(total_yara.value), "white")
         cprint("Link manipulation: " + str(total_link_manipulation.value), "white")
         cprint("Links blacklist: " + str(total_links_blacklist.value), "white")
         cprint("Links XSS: " + str(total_links_xss.value), "white")
 
 
-times_chrome = []
-times_wget = []
+times_yara = []
+times_links = []
+times_redirects = []
+times_xss = []
+
+times_parsing = []
+times_evaluation = []
+
+
 
 def detect_website(data):
     index = data[0]
-    domain = data[1]
-        
+    file = data[1]
+
+    domain = file[file.find('_js_')+4:-4]
+    print(domain)
+    """
     bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
     bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
                             ' --dump-dom http://' + domain #+ '2> /dev/null'
@@ -589,46 +613,61 @@ def detect_website(data):
         return
 
     try:
-        #start_time = time.time()
         output_after_js = subprocess.check_output(['bash', '-c', bash_command_after_js], timeout=15)
-        #times_chrome.append(time.time() - start_time)
     except subprocess.CalledProcessError:
         cprint("WARNING: Something has gone wrong with executing Chrome, domain: " + domain, 'red')
         return
     except subprocess.TimeoutExpired:
         cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
         return
+    """
 
-    html_before_js = BeautifulSoup(output_before_js, 'html.parser')
+    output_after_js = ""
+    with open(file, 'r') as input_file:
+        output_after_js = "".join([line for line in input_file])
+
+
+    html_before_js = "" #BeautifulSoup(output_before_js, 'html.parser')
     html_after_js = BeautifulSoup(output_after_js, 'html.parser')
 
     try:
-        html_before_js.prettify()
+        #html_before_js.prettify()
         html_after_js.prettify()
     except Exception:
         return
-
+    """
     if html_before_js is None:
         cprint("WARNING: Wget returned an empty web page, domain: " + domain, 'red')
         return
-
+    """
     if html_after_js is None:
         cprint("WARNING: Chrome returned an empty web page, domain: " + domain, 'red')
         return
 
     try:
+        start_time = time.time()
         parsed_domain = parser.parse(domain, html_before_js, html_after_js)
+        times_parsing.append(time.time() - start_time)
         detection_result = detector.detection(parsed_domain)
+
+        start_time = time.time()
         evaluator.evaluate(detection_result, index)
+        times_evaluation.append(time.time() - start_time)
     except Exception:
         return
 
-
+    cprint("Times parsing: " + str(sum(times_parsing) / len(times_parsing)), 'green')
+    cprint("Times evaluation: " + str(sum(times_evaluation) / len(times_evaluation)), 'green')
+    cprint("Times links: " + str(sum(times_links) / len(times_links)), 'green')
+    cprint("Times redirects: " + str(sum(times_redirects) / len(times_redirects)), 'green')
+    cprint("Times XSS: " + str(sum(times_xss) / len(times_xss)), 'green')
+    cprint("Times yara: " + str(sum(times_yara) / len(times_yara)), 'green')
 
 
 if __name__ == "__main__" :
+    start_program_time = time.time()
     domain_file = sys.argv[1]
-
+    """
     with open(domain_file, 'r') as input_file:
         domains = input_file.readlines()
 
@@ -641,6 +680,17 @@ if __name__ == "__main__" :
     for domain in domains:
         data = data + ([index, domain],)
         index = index + 1
+    """
+
+    files = glob.glob("/run/media/hagrid/HDD2/phishing/1/phish_1/downloaded/*_js_*.txt")
+
+    data = ()
+    count = len(files)
+    index = 1
+
+    for domain in files:
+        data = data + ([index, domain], )
+        index += 1
 
     parser = Parser()
     detector = Detector()
@@ -659,6 +709,8 @@ if __name__ == "__main__" :
     total_links_blacklist = Value('i', 0)
     total_links_xss = Value('i', 0)
 
-    pool = multiprocessing.Pool(5)
+    pool = multiprocessing.Pool(25)
     pool.map(detect_website, data, chunksize=1)
+
+    cprint('TOTAL TIME WHOLE PROGRAM: -------- ' + str(time.time() - start_program_time))
 
