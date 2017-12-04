@@ -4,12 +4,14 @@ import ipaddress
 import multiprocessing
 import os
 import psycopg2
+import re
 import subprocess
 import sys
 import ujson
 import urllib
 import yara
 from bs4 import BeautifulSoup
+from ctypes import c_char_p
 from multiprocessing import Value
 from pylibs.urlnorm.urlnorm_ext import get_first_level_domain
 from pylibs.urlnorm.urlnorm_ext import get_hostname
@@ -57,29 +59,6 @@ class Database:
             return False
 
         #cprint("Domain " + domain + " is in database blacklist.", 'green')
-        return True
-
-    def is_domain_in_whitelist(self, domain):
-        """
-        Checks if domain is in the DB whitelist. If yes returns true else false
-
-        :param domain: string 
-        :return: boolean
-        """
-
-        cur = self.conn.cursor()
-
-        try:
-            cur.execute("""SELECT domain FROM whitelist WHERE domain=%s""", (domain,))
-        except psycopg2.DatabaseError:
-            cprint("DATABASE ERROR: Execution of SELECT failed", 'red')
-
-        result = cur.fetchall()
-
-        if not result:
-            return False
-
-        cprint("Domain " + domain + " is in database whitelist.", 'green')
         return True
 
 
@@ -189,6 +168,7 @@ class Detector:
         result['html']['redirects'] = self.redirects_detection(parsed_domain['html'], parsed_domain['domain'])
         self.yara_detection(parsed_domain['html'])
         result['html']['yara'] = self.yara_matches
+        result['html']['code_xss'] = self.code_xss(parsed_domain['html'])
 
         for link in links:
             result['html']['links'][link] = self.link_detection(link)
@@ -198,11 +178,10 @@ class Detector:
     def link_detection(self, link, whitelist = False):
         result =  {'name': link}
         result['blacklist'] = self.database.is_domain_in_blacklist(link)
-        if whitelist:
-            result['whitelist'] = self.database.is_domain_in_whitelist(link)
         result['count_subdomains'] = self.link_count_subdomains(link)
         result['ip'] = self.link_is_ip_address(link)
         result['xss'] = self.is_link_xss(link)
+        result['man'] = self.link_manipulation(link)
 
         return result
 
@@ -223,6 +202,31 @@ class Detector:
         except ValueError:
             return False
 
+    def link_manipulation(self, link):
+        patterns = {
+            "([a-z]+\.)?[a-z]+-with-[a-z]+\.us",
+            "[a-z0-9]{3}zz\.[a-z0-9\-]+\.[a-z0-9\-]+\.[a-z]{3,}",
+            "^[a-z]{3,}-([0-9]{2}[a-z]{,3}|[a-z]{,3}[0-9]{2}).win$",
+            '^email\.[a-z0-9]+\.at\.gmail\.com\.[a-z0-9]+\.(space|club)$',
+            '^security-alert\..*\.(bid)$',
+            '^h[a-z0-9]{3}\.(website|site|online)$',
+            '^[a-z]+[0-9]{4}\.[a-z0-9]+\.xyz$',
+            '\.com-.*',
+            'inbox-msg-.*\.(gdn|top)$',
+            '.*chrome.*\.ru',
+            '.*dating.*\.(top|bid|accountant)$',
+            'hotgirls\..*\.xyz'
+        }
+
+        for pattern in patterns:
+            regex = re.compile(pattern)
+            result = regex.match(link)
+
+            if result:
+                return True
+
+            return False
+
     def link_count_subdomains(self, link):
         """
         Counts how many link has got
@@ -238,7 +242,7 @@ class Detector:
         except:
             return False
 
-        if count > 4:
+        if count > 3:
             return True
 
         return False
@@ -413,7 +417,6 @@ class Detector:
 
         return count
 
-
     def yara_detection(self, code):
         self.yara_matches = 0
 
@@ -426,6 +429,23 @@ class Detector:
         except yara.SyntaxError:
             cprint("YARA error occurred while matching rules.", "red")
             return False
+
+        return True
+
+    def code_xss(self, code):
+        patterns = {
+            "document.write('<script",
+            'document.write("<script',
+            ').append("<script',
+            ").append('<script"
+        }
+        code = code.prettify()
+
+        for pattern in patterns:
+            if code.find(pattern) != -1:
+                return True
+
+        return False
 
 
 class Evaluation:
@@ -452,7 +472,8 @@ class Evaluation:
         result['html']['links'] = {'blacklist': 0,
                                    'ip': 0,
                                    'count_subdomains': 0,
-                                   'xss': 0
+                                   'xss': 0,
+                                   'man': 0
                                    }
 
         for link in links.values():
@@ -464,15 +485,17 @@ class Evaluation:
                 result['html']['links']['count_subdomains'] += 1
             if (link['xss'] is True):
                 result['html']['links']['xss'] += 1
+            if (link['man'] is True) or (result['domain']['man'] is True):
+                result['html']['links']['man'] +=1
 
         status = "safe"
-        statuscolor = "green"
 
-        if((result['domain']['blacklist'] is True) or (result['domain']['xss'] is True) or (result['html']['yara'] > 0)):
+        if((result['domain']['blacklist'] is True) or (result['domain']['xss'] is True) or (result['html']['yara'] > 0) \
+               or (result['html']['links']['xss'] > 0) or (result['html']['links']['blacklist'] > 0) or (result['html']['code_xss'])):
             status = "dangerous"
-        elif((result['html']['links']['blacklist'] > 0) or (result['html']['links']['xss'] > 0) or (result['html']['links']['ip'] > 0) \
-                or (result['html']['links']['count_subdomains'] > 0) or (result['domain']['ip'] is True) or (result['html']['redirects']['outside'] > 0) \
-                or (result['html']['yara'] > 0)):
+        elif((result['html']['links']['ip'] > 0) or (result['html']['links']['count_subdomains'] > 0) \
+                or (result['domain']['ip'] is True) or (result['html']['redirects']['outside'] > 0) \
+                or (result['html']['links']['man'] is True) or (result['domain']['count_subdomains'] is True)):
             status = "suspicious"
 
         result['domain']['status'] = status
@@ -491,13 +514,13 @@ class Evaluation:
         if(result['domain']['status'] == 'safe'):
             total_safe.value += 1
 
-        if(result['domain']['xss'] is True):
+        if((result['domain']['xss'] is True) or (result['html']['code_xss'] is True)):
             total_xss.value += 1
         if(result['domain']['blacklist'] is True):
             total_blacklist.value += 1
         if(result['html']['redirects'] is True):
             total_redirects.value += 1
-        if(result['html']['yara'] is True):
+        if(result['html']['yara'] > 0):
             total_yara.value += 1
 
         if((result['html']['links']['blacklist'] > 0)):
@@ -506,9 +529,10 @@ class Evaluation:
         if ((result['html']['links']['xss'] > 0)):
             total_links_xss.value += 1
 
-        if ((result['html']['links']['ip'] > 0) \
-                or (result['html']['links']['count_subdomains'] > 0)):
-            total_links_blacklist.value += 1
+        if ((result['html']['links']['ip'] > 0)
+            or (result['html']['links']['count_subdomains'] > 0)
+            or (result['html']['links']['man'] > 0)):
+            total_link_manipulation.value += 1
 
     def print(self, result):
         cprint(" --- ", "grey")
@@ -588,12 +612,10 @@ def detect_website(data):
         cprint("WARNING: Chrome returned an empty web page, domain: " + domain, 'red')
         return
 
-    try:
-        parsed_domain = parser.parse(domain, html_before_js, html_after_js)
-        detection_result = detector.detection(parsed_domain)
-        evaluator.evaluate(detection_result, index)
-    except Exception:
-        return
+    parsed_domain = parser.parse(domain, html_before_js, html_after_js)
+    detection_result = detector.detection(parsed_domain)
+    evaluator.evaluate(detection_result, index)
+
 
 
 
@@ -629,6 +651,7 @@ if __name__ == "__main__" :
 
     total_links_blacklist = Value('i', 0)
     total_links_xss = Value('i', 0)
+
 
     pool = multiprocessing.Pool(5)
     pool.map(detect_website, data, chunksize=1)
