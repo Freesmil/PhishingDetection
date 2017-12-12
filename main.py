@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import glob
 import ipaddress
 import multiprocessing
 import os
@@ -20,6 +19,9 @@ from urllib.parse import urlparse
 
 
 class Database:
+    """
+    Class Database is for manipulation with the database
+    """
 
     def __init__(self):
         """
@@ -36,9 +38,9 @@ class Database:
         """
         Checks if domain is in the DB blacklist. If yes returns true else false
         
-        :param str domain: string 
-        :return: boolean
-        :rtype: boolean
+        :param str domain: name of domain/link
+        :return: True if the domain is in the DB or False if not
+        :rtype: bool
         """
         try:
             converted = get_first_level_domain(domain)
@@ -61,11 +63,13 @@ class Database:
         if not result:
             return False
 
-        #cprint("Domain " + domain + " is in database blacklist.", 'green')
         return True
 
 
 class Parser:
+    """
+    Class Parser is for parsing all needed parameters and elements from HTML code
+    """
 
     def __init__(self):
         """
@@ -73,11 +77,16 @@ class Parser:
         """
 
     def parse(self, domain, html_before, html_after):
+        """
+        Parse all needed parts and return in dict
+        :param str domain: name of domain 
+        :param str html_before: HTML before JS execution
+        :param str html_after:  HTML after JS execution
+        :return: Needed parsed elements and parameters for further detection
+        :rtype: dict
+        """
 
         links = self.get_links(domain, html_after)
-
-        #for link in self.get_links(domain, html_after):
-        #    links.add(link)
 
         result = {'domain': domain,
                   'html': html_after,
@@ -90,11 +99,14 @@ class Parser:
     def get_links(self, domain, html):
         """
         Gets html DOM and returns links from elements 'a' and 'link' in 'body'.
-
-        :return: set
+        :param domain: 
+        :param str html: DOM 
+        :return: All links within DOM
+        :rtype: set
         """
 
         links = set()
+
         for a in html('a'):
             try:
                 link = urllib.parse.unquote(urllib.parse.unquote(a['href']))
@@ -130,9 +142,11 @@ class Parser:
 
     def get_outside_links(self, domain, links):
         """
-        Gets links and return links which are outside of the domain.
-
-        :return: set 
+        Gets links and return which are outside of the domain.
+        :param str domain: name of domain 
+        :param set links: set of links within DOM 
+        :return: Links which are outside of the domain
+        :rtype: set
         """
 
         outside_links = set()
@@ -146,6 +160,9 @@ class Parser:
 
 
 class Detector:
+    """
+    Class for detection malicious content within code of the website
+    """
 
     def __init__(self):
         """
@@ -160,6 +177,12 @@ class Detector:
         )
 
     def detection(self, parsed_domain):
+        """
+        Main function for summary all results of detection
+        :param dict parsed_domain: Domain with parsed information 
+        :return: Results of all types of detection
+        :rtype: dict
+        """
         links = parsed_domain['links']
 
         result = {'name': parsed_domain['domain']}
@@ -169,27 +192,25 @@ class Detector:
         result['html']['links_outside_count'] = len(parsed_domain['links_outside'])
         result['html']['links_count'] = len(parsed_domain['links'])
 
-        start_time = time.time()
         result['html']['code_xss'] = self.code_xss(parsed_domain['html'])
-        times_xss.append(time.time() - start_time)
 
-        start_time = time.time()
         result['html']['redirects'] = self.redirects_detection(parsed_domain['html'], parsed_domain['domain'])
-        times_redirects.append(time.time() - start_time)
 
-        start_time = time.time()
         self.yara_detection(parsed_domain['html'])
         result['html']['yara'] = self.yara_matches
-        times_yara.append(time.time() - start_time)
 
-        start_time = time.time()
         for link in links:
             result['html']['links'][link] = self.link_detection(link)
-        times_links.append(time.time() - start_time)
 
         return result
 
-    def link_detection(self, link, whitelist = False):
+    def link_detection(self, link):
+        """
+        Gets a link and detect all what can a link hide
+        :param str link: URL 
+        :return: All results of link detection 
+        :rtype: dict
+        """
         result =  {'name': link}
         result['blacklist'] = self.database.is_domain_in_blacklist(link)
         result['count_subdomains'] = self.link_count_subdomains(link)
@@ -201,9 +222,10 @@ class Detector:
 
     def link_is_ip_address(self, link):
         """
-        If link is IP address returns true else false
-        
-        :return: bool 
+        If link is IP address returns True else False
+        :param str link: URL 
+        :return: If link is IP address returns True else False
+        :rtype: bool
         """
         try:
             link = get_first_level_domain(link)
@@ -217,6 +239,12 @@ class Detector:
             return False
 
     def link_manipulation(self, link):
+        """
+        Tests if a link has any phishing pattern
+        :param str link: URL 
+        :return: If link has phishing pattern
+        :rtype: bool
+        """
         patterns = {
             "([a-z]+\.)?[a-z]+-with-[a-z]+\.us",
             "[a-z0-9]{3}zz\.[a-z0-9\-]+\.[a-z0-9\-]+\.[a-z]{3,}",
@@ -243,11 +271,11 @@ class Detector:
 
     def link_count_subdomains(self, link):
         """
-        Counts how many link has got
-        for meta in code('meta'):
-        :return: int
+        Counts how many has got link subdomains 
+        :param str link: URL 
+        :return: If link has 5 and more subdomains return True else False
+        :rtype: bool
         """
-
         count = 0
 
         hostname = get_hostname(link)
@@ -256,12 +284,18 @@ class Detector:
         except:
             return False
 
-        if count > 3:
+        if count > 4:
             return True
 
         return False
 
     def is_link_xss(self, link):
+        """
+        Check if link contains XSS
+        :param str link: URL 
+        :return: If link is XSS
+        :rtype: bool
+        """
         try:
             link = urlparse(link)
             query = link.query
@@ -381,18 +415,27 @@ class Detector:
         return False
 
     def redirects_detection(self, code, domain):
-
+        """
+        Detects if a code contains redirects
+        :param str code: DOM 
+        :param str domain: name of domain 
+        :return: Contained redirects
+        :rtype: dict
+        """
         redirects = dict()
-        redirects['outside'] = self.redirects_html(code, domain) + self.redirects_js(code.prettify(), domain)
+        redirects['outside'] = self.redirects_html(code, domain)
 
         return redirects
 
-    def redirects_js(self, code, domain):
-        count = 0
-
-        return count
-
     def redirects_html(self, code, domain):
+        """
+        Gets a code and detect there redirect patterns
+        :param str code: HTML 
+        :param str domain: name of domain 
+        :return: Number of redirects
+        :rtype: int
+        """
+
         count = 0
         links = set()
 
@@ -431,6 +474,12 @@ class Detector:
         return count
 
     def yara_detection(self, code):
+        """
+        Detection of occurrence of malware pattern
+        :param code: 
+        :return: If code contains yara pattern
+        :rtype: bool
+        """
         self.yara_matches = 0
 
         try:
@@ -446,6 +495,12 @@ class Detector:
         return True
 
     def code_xss(self, code):
+        """
+        Detection if Javascript contains XSS by pytterns
+        :param str code: DOM
+        :return: If code has XSS
+        :rtype: bool
+        """
         patterns = {
             "document.write('<script",
             'document.write("<script',
@@ -462,10 +517,14 @@ class Detector:
 
 
 class Evaluation:
+    """
+    Class for evaluating results from Detection
+    """
+
     def __init__(self, count):
         """
         Constructor.
-
+        :param int count: index of searched website 
         """
         self.count = count
         self.dangerous = 0
@@ -478,6 +537,12 @@ class Evaluation:
         self.link_manipulation = 0
 
     def evaluate(self, detection_result, index):
+        """
+        The summary of evaluation of the website
+        :param dict detection_result: given results from Detection 
+        :param int index: index of searched website 
+        """
+
         links = detection_result['html']['links']
 
         result = detection_result
@@ -520,6 +585,10 @@ class Evaluation:
         self.print_total(index)
 
     def count_total(self, result):
+        """
+        Counting the main summary of all websites
+        :param dict result: results of Detection of website 
+        """
         if(result['domain']['status'] == 'dangerous'):
             total_dangerous.value += 1
         if(result['domain']['status'] == 'suspicious'):
@@ -548,6 +617,10 @@ class Evaluation:
             total_link_manipulation.value += 1
 
     def print(self, result):
+        """
+        Prints results of all detection types of website        
+        :param dict result: Results of website detection 
+        """
         cprint(" --- ", "grey")
         cprint("Domain: " + result['name'], 'cyan')
         cprint("    Domain is " + result['domain']['status'])
@@ -566,6 +639,10 @@ class Evaluation:
         cprint("        Too many subdomains: " + str(result['html']['links']['count_subdomains']), 'white')
 
     def print_total(self, index):
+        """
+        Prints summary of all websites
+        :param int index: index of last detected website 
+        """
         cprint(" --- ", "grey")
         cprint(str(index) + "/" + str(self.count) + " are processed")
         cprint("Dangerous domains: " + str(total_dangerous.value), "white")
@@ -581,23 +658,14 @@ class Evaluation:
         cprint("Links XSS: " + str(total_links_xss.value), "white")
 
 
-times_yara = []
-times_links = []
-times_redirects = []
-times_xss = []
-
-times_parsing = []
-times_evaluation = []
-
-
-
 def detect_website(data):
-    index = data[0]
-    file = data[1]
-
-    domain = file[file.find('_js_')+4:-4]
-    print(domain)
     """
+    The main function for downloading website which are then send to Parser, Detector and Evaluator
+    :param set data: data with index of the domain and its name  
+    """
+    index = data[0]
+    domain = data[1]
+
     bash_command_before_js = 'wget -qO- -t 1 --connect-timeout=5 http://' + domain
     bash_command_after_js = 'google-chrome-stable --headless --timeout=5000 --virtual-time-budget=5000 --disable-gpu' \
                             ' --dump-dom http://' + domain #+ '2> /dev/null'
@@ -620,54 +688,38 @@ def detect_website(data):
     except subprocess.TimeoutExpired:
         cprint("WARNING: Something has gone wrong with executing Chrome (timeout expired), domain: " + domain, 'red')
         return
-    """
 
-    output_after_js = ""
-    with open(file, 'r') as input_file:
-        output_after_js = "".join([line for line in input_file])
-
-
-    html_before_js = "" #BeautifulSoup(output_before_js, 'html.parser')
+    html_before_js = BeautifulSoup(output_before_js, 'html.parser')
     html_after_js = BeautifulSoup(output_after_js, 'html.parser')
 
     try:
-        #html_before_js.prettify()
+        html_before_js.prettify()
         html_after_js.prettify()
     except Exception:
         return
-    """
+
     if html_before_js is None:
         cprint("WARNING: Wget returned an empty web page, domain: " + domain, 'red')
         return
-    """
+
     if html_after_js is None:
         cprint("WARNING: Chrome returned an empty web page, domain: " + domain, 'red')
         return
 
     try:
-        start_time = time.time()
         parsed_domain = parser.parse(domain, html_before_js, html_after_js)
-        times_parsing.append(time.time() - start_time)
+
         detection_result = detector.detection(parsed_domain)
 
-        start_time = time.time()
         evaluator.evaluate(detection_result, index)
-        times_evaluation.append(time.time() - start_time)
     except Exception:
         return
-
-    cprint("Times parsing: " + str(sum(times_parsing) / len(times_parsing)), 'green')
-    cprint("Times evaluation: " + str(sum(times_evaluation) / len(times_evaluation)), 'green')
-    cprint("Times links: " + str(sum(times_links) / len(times_links)), 'green')
-    cprint("Times redirects: " + str(sum(times_redirects) / len(times_redirects)), 'green')
-    cprint("Times XSS: " + str(sum(times_xss) / len(times_xss)), 'green')
-    cprint("Times yara: " + str(sum(times_yara) / len(times_yara)), 'green')
 
 
 if __name__ == "__main__" :
     start_program_time = time.time()
     domain_file = sys.argv[1]
-    """
+
     with open(domain_file, 'r') as input_file:
         domains = input_file.readlines()
 
@@ -680,17 +732,6 @@ if __name__ == "__main__" :
     for domain in domains:
         data = data + ([index, domain],)
         index = index + 1
-    """
-
-    files = glob.glob("/run/media/hagrid/HDD2/phishing/1/phish_1/downloaded/*_js_*.txt")
-
-    data = ()
-    count = len(files)
-    index = 1
-
-    for domain in files:
-        data = data + ([index, domain], )
-        index += 1
 
     parser = Parser()
     detector = Detector()
@@ -709,8 +750,5 @@ if __name__ == "__main__" :
     total_links_blacklist = Value('i', 0)
     total_links_xss = Value('i', 0)
 
-    pool = multiprocessing.Pool(25)
+    pool = multiprocessing.Pool(20)
     pool.map(detect_website, data, chunksize=1)
-
-    cprint('TOTAL TIME WHOLE PROGRAM: -------- ' + str(time.time() - start_program_time))
-
